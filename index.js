@@ -1,16 +1,22 @@
 'use strict';
 
+const chalk = require('chalk');
 const Phantom = require('phantom');
-const BlinkDiff = require('blink-diff');
+const waitFor = require('./wait-for');
+
 const getCSS = require('./get-css');
+const renderDiff = require('./diff');
+
+const DEFAULT_OPTIONS = {
+  phantom: ['--ignore-ssl-errors=yes'],
+  width: 1200,
+  height: 800,
+  threshold: 800
+};
 
 module.exports = function critical(url, options) {
 
-  options = Object.assign({
-    width: 1024,
-    height: 768,
-    threshold: 512
-  }, options);
+  options = Object.assign(DEFAULT_OPTIONS, options);
 
   let instance;
   let page;
@@ -21,96 +27,32 @@ module.exports = function critical(url, options) {
     return styles;
   };
 
-  const renderDiff = (styles) => {
-    console.log('diffing...');
-
-    const diff = Object.assign({
-      before: 'before.png',
-      after: 'after.png',
-      nocss: 'nocss.png',
-      result: 'diff.png',
-      threshold: 0.01
-    }, typeof options.diff === 'object' ? options.diff : {});
-
-    const clipRect = {
-      top: 0,
-      left: 0,
-      width: options.width,
-      height: options.height
-    };
-
-    console.log('rendering before.png');
-    return page.property('clipRect', clipRect)
-      .then(() => {
-        console.log('rendering before:', diff.before);
-        return page.render(diff.before);
-      })
-      .then(() => {
-        console.log('disabling stylesheets');
-        return page.evaluate(function() {
-          // disable stylesheets
-          [].forEach.call(document.styleSheets, function(sheet) {
-            sheet.disabled = true;
-          });
-        })
-      })
-      .then(() => {
-        if (diff.nocss) {
-          console.log('rendering without CSS:', diff.nocss);
-          return page.render(diff.nocss);
-        }
-      })
-      .then(() => {
-        console.log('inserting critical CSS');
-        return page.evaluate(function(css) {
-          var style = document.createElement('style');
-          style.textContent = css;
-          document.head.appendChild(style);
-        }, styles.join(''));
-      })
-      .then(() => {
-        console.log('rendering after:', diff.after);
-        return page.render(diff.after);
-      })
-      .then(() => {
-        console.log('rendering diff:', diff.result);
-        const blink = new BlinkDiff({
-          imageAPath: diff.before,
-          imageBPath: diff.after,
-
-          thresholdType: BlinkDiff.THRESHOLD_PERCENT,
-          threshold: 0.01, // 1% threshold
-
-          imageOutputPath: diff.result
-        });
-
-        return new Promise((resolve, reject) => {
-          blink.run((error, result) => {
-            if (error) {
-              return reject(error);
-            } else {
-              console.log(blink.hasPassed(result.code) ? 'Passed' : 'Failed');
-              console.log('Found ' + result.differences + ' differences.');
-              return done(styles);
-            }
-          });
-        });
-      });
+  const notify = function() {
+    arguments[0] = chalk.yellow(arguments[0]);
+    console.warn.apply(console, arguments);
   };
 
-  return Phantom.create()
+  notify('starting up...');
+  return Phantom.create(options.phantom)
     .then(phantom => {
       instance = phantom;
+      notify('creating page...');
       return instance.createPage();
     })
     .then(thepage => {
       page = thepage;
+      notify('opening:', url);
       return page.open(url);
     })
     .then(status => {
-      console.warn('status:', status);
+      notify('status:', status);
+      notify('waiting for document ready...');
+      return waitFor(page, function() {
+        return document.readyState === 'complete';
+      });
     })
     .then(() => {
+      notify('setting viewport size: %d x %d', options.width, options.height);
       return page.property('viewportSize', {
         width: options.width,
         height: options.height
@@ -120,11 +62,16 @@ module.exports = function critical(url, options) {
       return page.evaluate(getCSS, options.threshold);
     })
     .then(result => {
-      if (result.errors && result.errors.length) {
-        console.warn('bad selectors:', result.errors.join('\n'));
+      if (result && result.errors && result.errors.length) {
+        let errors = result.errors;
+        notify('got %d invalid selectors (per PhantomJS):', errors.length);
+        errors.forEach((error, i) => {
+          notify((i + 1) + '.', chalk.red(error));
+        });
       }
       return options.diff
-        ? renderDiff(result.styles)
+        ? renderDiff(page, result.styles, options, notify)
+            .then(styles => done(styles))
         : done(result.styles);
     }, error => {
       done();

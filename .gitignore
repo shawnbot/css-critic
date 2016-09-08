@@ -1,0 +1,6 @@
+.*.sw?
+*.css
+*.html
+*.log
+*.png
+node_modules

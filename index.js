@@ -2,9 +2,10 @@
 
 const chalk = require('chalk');
 const Phantom = require('phantom');
-const waitFor = require('./wait-for');
+const cssnano = require('cssnano');
 
 const getCSS = require('./get-css');
+const waitFor = require('./wait-for');
 const renderDiff = require('./diff');
 
 const DEFAULT_OPTIONS = {
@@ -22,10 +23,10 @@ module.exports = function critical(url, options) {
   let instance;
   let page;
 
-  const done = (styles) => {
+  const done = (css) => {
     page.close();
     instance.exit();
-    return styles;
+    return css;
   };
 
   const notify = function() {
@@ -74,10 +75,16 @@ module.exports = function critical(url, options) {
           notify((i + 1) + '.', chalk.red(error));
         });
       }
+      return result.styles.join('\n');
+    })
+    .then(css => {
+      return cssnano.process(css);
+    })
+    .then(css => {
       return options.diff
-        ? renderDiff(page, result.styles, options, notify)
+        ? renderDiff(page, css, options, notify)
             .then(done)
-        : done(result.styles);
+        : done(css);
     }, error => {
       done();
       return error;

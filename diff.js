@@ -6,7 +6,7 @@ const BlinkDiff = require('blink-diff');
 
 const CRLF = '\n';
 
-module.exports = function renderDiff(page, styles, options, notify) {
+module.exports = function renderDiff(page, css, options, notify) {
   notify('diffing...');
 
   const diff = Object.assign({
@@ -50,7 +50,7 @@ module.exports = function renderDiff(page, styles, options, notify) {
         return page.render(diff.nocss);
       }
     })
-    .then(() => {
+    .then((css) => {
       notify('inserting critical CSS');
       return page.evaluate(function(css) {
         var style = document.createElement('style');
@@ -58,7 +58,7 @@ module.exports = function renderDiff(page, styles, options, notify) {
         document.head.appendChild(style);
       }, [
         '/* critical CSS */',
-        styles.join(CRLF),
+        css,
         ''
       ].join(CRLF));
     })
@@ -92,7 +92,7 @@ module.exports = function renderDiff(page, styles, options, notify) {
             notify('Found',
                    chalk.bold(result.differences.toLocaleString()),
                    'differences');
-            resolve(styles);
+            resolve(css);
           }
         });
       });

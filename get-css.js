@@ -21,6 +21,8 @@ module.exports = function(height) {
       selector: (rule.selectorText || '')
         // strip pseudo-classes
         .replace(/:{1,2}(before|after|-webkit-[-\w]+)/g, '')
+        .replace(/,\s*,/g, ',')
+        .replace(/,\s*$/g, '')
     });
   };
 
@@ -75,6 +77,14 @@ module.exports = function(height) {
   var inView = filter(
     document.querySelectorAll('*'),
     function(el) {
+      // XXX: if something has display: none, include its styles
+      // because we can't calculate its bounding box
+      var computed = window.getComputedStyle(el);
+      if (computed.getPropertyValue('display') === 'none') {
+        return true;
+      }
+      // otherwise, only include it if its bounding box's top and bottom fall
+      // within the "visible" range
       var rect = el.getBoundingClientRect();
       return rect.top < height && rect.bottom > 0;
     }
@@ -91,6 +101,8 @@ module.exports = function(height) {
     }
   });
 
+  // strip @media preamble and postamble lines without
+  // any rules in between them
   for (var i = 0; i < valid.length; i++) {
     var style = valid[i];
     if (style.text.indexOf('@media') === 0) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs-promise');
+const chalk = require('chalk');
 const BlinkDiff = require('blink-diff');
 
 const CRLF = '\n';
@@ -85,8 +86,12 @@ module.exports = function renderDiff(page, styles, options, notify) {
           if (error) {
             reject(error);
           } else {
-            notify(blink.hasPassed(result.code) ? 'Passed' : 'Failed');
-            notify('Found ' + result.differences + ' differences.');
+            notify(blink.hasPassed(result.code)
+                   ? chalk.green('Passed')
+                   : chalk.red('Failed'));
+            notify('Found',
+                   chalk.bold(result.differences.toLocaleString()),
+                   'differences');
             resolve(styles);
           }
         });

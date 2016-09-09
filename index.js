@@ -11,7 +11,8 @@ const DEFAULT_OPTIONS = {
   phantom: ['--ignore-ssl-errors=yes'],
   width: 1200,
   height: 800,
-  threshold: 800
+  threshold: 800,
+  timeout: 5000
 };
 
 module.exports = function critical(url, options) {
@@ -49,7 +50,7 @@ module.exports = function critical(url, options) {
       notify('waiting for document ready...');
       return waitFor(page, function() {
         return document.readyState === 'complete';
-      });
+      }, options.timeout);
     })
     .then(() => {
       notify('setting viewport size: %d x %d', options.width, options.height);
@@ -62,7 +63,11 @@ module.exports = function critical(url, options) {
       return page.evaluate(getCSS, options.threshold);
     })
     .then(result => {
-      if (result && result.errors && result.errors.length) {
+      if (!result) {
+        console.error('no styles found!');
+        return done();
+      }
+      if (result.errors.length) {
         let errors = result.errors;
         notify('got %d invalid selectors (per PhantomJS):', errors.length);
         errors.forEach((error, i) => {
@@ -71,7 +76,7 @@ module.exports = function critical(url, options) {
       }
       return options.diff
         ? renderDiff(page, result.styles, options, notify)
-            .then(styles => done(styles))
+            .then(done)
         : done(result.styles);
     }, error => {
       done();

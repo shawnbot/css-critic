@@ -1,6 +1,6 @@
 module.exports = function(height) {
 
-  var INDENT = '\t';
+  var INDENT = '  ';
 
   var forEach = function(d, f) {
     return Array.prototype.forEach.call(d, f);
@@ -12,13 +12,15 @@ module.exports = function(height) {
 
   var styles = [];
   var errors = [];
+  var rejects = [];
 
   var addRule = function(rule) {
     styles.push({
       text: rule.cssText
         .replace(/\bcontent: (\w+);/g, 'content: "$1";'),
-      selector: rule.selectorText
-        .replace(/:{1,2}(before|after)/g, '')
+      selector: (rule.selectorText || '')
+        // strip pseudo-classes
+        .replace(/:{1,2}(before|after|-webkit-[-\w]+)/g, '')
     });
   };
 
@@ -29,48 +31,46 @@ module.exports = function(height) {
   var processRule = function(rule) {
     switch (rule.type) {
       case CSSRule.STYLE_RULE:
+      case CSSRule.FONT_FACE_RULE:
         addRule(rule);
         break;
+
       case CSSRule.MEDIA_RULE:
         var media = rule.media.mediaText;
-        if (matchMedia(media)) {
-          var index = styles.length;
-          forEach(rule.cssRules, processRule);
-          if (styles.length > index) {
-            styles.splice(index, 0, {
-              text: ['@media', media, '{'].join(' ')
+        var index = styles.length;
+        forEach(rule.cssRules, processRule);
+        if (styles.length > index) {
+          styles.slice(index, index + (styles.length - index))
+            .forEach(function(style) {
+              style.text = INDENT + style.text;
             });
-            styles.push({
-              text: ['} /* end', media, '*/'].join(' ')
-            });
-          }
+          styles.splice(index, 0, {
+            text: ['@media', media, '{'].join(' ')
+          });
+          styles.push({
+            text: ['}', '/* end @media', media, '*/'].join(' ')
+          });
         }
+        break;
+
+      case CSSRule.IMPORT_RULE:
+        processStylesheet(rule.styleSheet);
         break;
     }
   };
 
-  filter(document.styleSheets, function(sheet) {
-    return ![].some.call(sheet.media, function(media) {
-      return media === 'print';
+  var isValidStylesheet = function(sheet) {
+    return [].some.call(sheet.media, function(media) {
+      return media === 'screen' || media === 'all';
     });
-  })
-  .forEach(function(sheet) {
-    forEach(sheet.cssRules, processRule);
-  });
+  };
 
-  var valid = styles.filter(function(style, index) {
-    if (!style.selector) {
-      return true;
-    }
-    try {
-      document.body.webkitMatchesSelector(style.selector);
-    } catch (error) {
-      errors.push(style.selector);
-      return false;
-    }
-    style.index = index;
-    return true;
-  });
+  var processStylesheet = function(sheet) {
+    forEach(sheet.cssRules, processRule);
+  };
+
+  filter(document.styleSheets, isValidStylesheet)
+    .forEach(processStylesheet);
 
   var inView = filter(
     document.querySelectorAll('*'),
@@ -80,15 +80,30 @@ module.exports = function(height) {
     }
   );
 
+  var valid = styles.filter(function(style, index) {
+    try {
+      return !style.selector || inView.some(function(el) {
+        return el.webkitMatchesSelector(style.selector);
+      });
+    } catch (error) {
+      errors.push(style.selector);
+      return false;
+    }
+  });
+
+  for (var i = 0; i < valid.length; i++) {
+    var style = valid[i];
+    if (style.text.indexOf('@media') === 0) {
+      if (valid[i + 1] && valid[i + 1].text.indexOf('end @media') > -1) {
+        valid.splice(i, 2);
+        i -= 2;
+      }
+    }
+  }
+
   return {
-    errors: errors,
-    styles: valid
-      .filter(function(style) {
-        return !style.selector || inView.some(function(el) {
-          return el.webkitMatchesSelector(style.selector);
-        });
-      })
-      .map(function(style) { return style.text; })
+    styles: valid.map(function(style) { return style.text; }),
+    errors: errors
   };
 
 };

@@ -9,8 +9,8 @@ module.exports = function(page, condition, timeout) {
     }
     return page.evaluate(condition)
       .then(result => {
-        console.warn('checking again');
-        return result || check();
+        // TODO: sleep for a bit
+        return result === false ? check() : result;
       });
   };
   return check();

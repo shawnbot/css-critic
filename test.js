@@ -1,6 +1,7 @@
 'use strict';
 const critical = require('./');
-const url = process.argv[3] || 'http://localhost:4000';
+const args = process.argv.slice(2);
+const url = args.shift() || 'http://localhost:4000';
 
 critical(url, {diff: true})
   .then(
